@@ -29,6 +29,8 @@ export function NotificationsView() {
   const [userRole, setUserRole] = useState<"wife" | "husband" | null>(null)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const router = useRouter()
   const supabase = createClient()
 
@@ -39,6 +41,8 @@ export function NotificationsView() {
 
     const apply = async () => {
       try {
+        if (typeof window === 'undefined') return
+        
         const hid = localStorage.getItem('householdId')
         if (!hid) return alert('No household id')
         setLoading(true)
@@ -92,65 +96,81 @@ export function NotificationsView() {
   }
 
   useEffect(() => {
-    const role = localStorage.getItem("userRole") as "wife" | "husband" | null
-    if (!role) {
-      router.push("/")
-      return
-    }
-    setUserRole(role)
-
-    const savedNotifications = localStorage.getItem("notifications")
-    if (savedNotifications) {
-      setNotifications(JSON.parse(savedNotifications))
-    }
-
-    // If connected to a household, fetch notifications from Supabase
-    const hid = localStorage.getItem('householdId')
+    if (typeof window === 'undefined') return
+    
     let channel: any = null
-    if (hid) {
-      ;(async () => {
-        try {
-          const { data } = await supabase.from('notifications').select('*').eq('household_id', hid).order('timestamp', { ascending: false })
-          if (data) setNotifications(data.map((n: any) => ({ id: n.id, itemName: n.item_name, category: n.category, status: n.status, isRead: n.is_read, timestamp: n.timestamp })))
-        } catch (err) {
-          console.error('[v0] Failed to fetch notifications:', err)
-        }
-      })()
-
-      // Setup realtime subscription to keep notifications in sync
+    
+    const initializeNotifications = async () => {
       try {
-        channel = supabase
-          .channel(`notifications-${hid}`)
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'notifications', filter: `household_id=eq.${hid}` },
-            (payload: any) => {
-              try {
-                if (payload.eventType === 'INSERT') {
-                  const n = payload.new
-                  setNotifications((prev) => [{ id: n.id, itemName: n.item_name, category: n.category, status: n.status, isRead: n.is_read, timestamp: n.timestamp }, ...prev])
-                } else if (payload.eventType === 'UPDATE') {
-                  const n = payload.new
-                  setNotifications((prev) => prev.map((pn) => (pn.id === n.id ? { id: n.id, itemName: n.item_name, category: n.category, status: n.status, isRead: n.is_read, timestamp: n.timestamp } : pn)))
-                } else if (payload.eventType === 'DELETE') {
-                  const old = payload.old
-                  setNotifications((prev) => prev.filter((pn) => pn.id !== old.id))
-                }
-              } catch (e) {
-                console.error('[v0] Error handling notifications realtime payload:', e)
-              }
-            },
-          )
-          .subscribe()
-      } catch (e) {
-        console.warn('[v0] Failed to setup notifications realtime subscription:', e)
+        setLoading(true)
+        setError(null)
+        
+        const role = localStorage.getItem("userRole") as "wife" | "husband" | null
+        if (!role) {
+          router.push("/")
+          return
+        }
+        setUserRole(role)
+
+        const savedNotifications = localStorage.getItem("notifications")
+        if (savedNotifications) {
+          setNotifications(JSON.parse(savedNotifications))
+        }
+
+        // If connected to a household, fetch notifications from Supabase
+        const hid = localStorage.getItem('householdId')
+        if (hid) {
+          try {
+            const { data } = await supabase.from('notifications').select('*').eq('household_id', hid).order('timestamp', { ascending: false })
+            if (data) setNotifications(data.map((n: any) => ({ id: n.id, itemName: n.item_name, category: n.category, status: n.status, isRead: n.is_read, timestamp: n.timestamp })))
+          } catch (err) {
+            console.error('[v0] Failed to fetch notifications:', err)
+            setError('Failed to fetch notifications')
+          }
+
+          // Setup realtime subscription to keep notifications in sync
+          try {
+            channel = supabase
+              .channel(`notifications-${hid}`)
+              .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'notifications', filter: `household_id=eq.${hid}` },
+                (payload: any) => {
+                  try {
+                    if (payload.eventType === 'INSERT') {
+                      const n = payload.new
+                      setNotifications((prev) => [{ id: n.id, itemName: n.item_name, category: n.category, status: n.status, isRead: n.is_read, timestamp: n.timestamp }, ...prev])
+                    } else if (payload.eventType === 'UPDATE') {
+                      const n = payload.new
+                      setNotifications((prev) => prev.map((pn) => (pn.id === n.id ? { id: n.id, itemName: n.item_name, category: n.category, status: n.status, isRead: n.is_read, timestamp: n.timestamp } : pn)))
+                    } else if (payload.eventType === 'DELETE') {
+                      const old = payload.old
+                      setNotifications((prev) => prev.filter((pn) => pn.id !== old.id))
+                    }
+                  } catch (e) {
+                    console.error('[v0] Error handling notifications realtime payload:', e)
+                  }
+                },
+              )
+              .subscribe()
+          } catch (e) {
+            console.warn('[v0] Failed to setup notifications realtime subscription:', e)
+          }
+        }
+
+        const savedFiles = localStorage.getItem("uploadedFiles")
+        if (savedFiles) {
+          setUploadedFiles(JSON.parse(savedFiles))
+        }
+      } catch (err) {
+        console.error('[v0] Error initializing notifications:', err)
+        setError('Failed to load notifications')
+      } finally {
+        setLoading(false)
       }
     }
 
-    const savedFiles = localStorage.getItem("uploadedFiles")
-    if (savedFiles) {
-      setUploadedFiles(JSON.parse(savedFiles))
-    }
+    initializeNotifications()
 
     return () => {
       try {
@@ -168,10 +188,23 @@ export function NotificationsView() {
     link.click()
   }
 
-  if (!userRole) {
+  if (!userRole || loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 flex items-center justify-center">
-        <p className="text-lg text-muted-foreground">Loading...</p>
+        <p className="text-lg text-muted-foreground">Loading notifications...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 flex items-center justify-center">
+        <Card className="max-w-md">
+          <CardContent className="text-center p-6">
+            <p className="text-red-600 mb-4">{error}</p>
+            <Button onClick={() => window.location.reload()}>Try Again</Button>
+          </CardContent>
+        </Card>
       </div>
     )
   }
