@@ -23,27 +23,33 @@ export function LoginForm() {
   useEffect(() => {
     // If the callback couldn't find a session it redirects to /?signin=missing
     // and we show a clear instruction to the user.
-    const signin = searchParams.get?.('signin')
-    if (signin === 'missing') {
-      setMessage('No active session detected. After clicking the link in your email, click "I\'ve confirmed — Continue" to finish sign-in. Also ensure your Supabase Redirect URL includes /auth/callback and open the email link in the same browser.')
+    if (typeof window !== 'undefined') {
+      const signin = searchParams.get?.('signin')
+      if (signin === 'missing') {
+        setMessage('No active session detected. After clicking the link in your email, click "I\'ve confirmed — Continue" to finish sign-in. Also ensure your Supabase Redirect URL includes /auth/callback and open the email link in the same browser.')
+      }
     }
   }, [searchParams])
 
   useEffect(() => {
-    try {
-      const v = localStorage.getItem('hasAccount')
-      setHasAccount(!!v)
-    } catch (e) {
-      /* ignore */
+    if (typeof window !== 'undefined') {
+      try {
+        const v = localStorage.getItem('hasAccount')
+        setHasAccount(!!v)
+      } catch (e) {
+        /* ignore */
+      }
     }
   }, [])
 
   useEffect(() => {
-    try {
-      const remembered = localStorage.getItem('rememberedEmail')
-      if (remembered) setEmail(remembered)
-    } catch (e) {
-      /* ignore */
+    if (typeof window !== 'undefined') {
+      try {
+        const remembered = localStorage.getItem('rememberedEmail')
+        if (remembered) setEmail(remembered)
+      } catch (e) {
+        /* ignore */
+      }
     }
   }, [])
 
@@ -64,8 +70,10 @@ export function LoginForm() {
       })
       if (error) throw error
       // store selected role temporarily; we'll set role permanently after join
-      localStorage.setItem("tempRole", role)
-  try { localStorage.setItem('hasAccount', 'true') } catch (e) { }
+      if (typeof window !== 'undefined') {
+        localStorage.setItem("tempRole", role)
+        try { localStorage.setItem('hasAccount', 'true') } catch (e) { }
+      }
       setMessage('Check your email for the sign-in link. After signing in, open the app again.')
     } catch (err: any) {
       console.error('[v0] Error sending magic link:', err)
@@ -86,9 +94,11 @@ export function LoginForm() {
       }
 
       // Keep magic-link sign-in only. Role is stored and the user navigates to dashboard
-      localStorage.setItem('tempRole', role)
-      localStorage.setItem('userRole', role)
-      try { localStorage.setItem('hasAccount', 'true') } catch (e) { }
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('tempRole', role)
+        localStorage.setItem('userRole', role)
+        try { localStorage.setItem('hasAccount', 'true') } catch (e) { }
+      }
       router.replace('/dashboard')
     } catch (err) {
       console.error('[v0] Continue after confirm failed:', err)
@@ -124,9 +134,11 @@ export function LoginForm() {
           <Button
             onClick={() => {
               // Mark that we want to auto-generate a household code when we reach the dashboard
-              try { localStorage.setItem('autoGenerate', '1') } catch (e) { }
-              localStorage.setItem('tempRole', role)
-              localStorage.setItem('userRole', role)
+              if (typeof window !== 'undefined') {
+                try { localStorage.setItem('autoGenerate', '1') } catch (e) { }
+                localStorage.setItem('tempRole', role)
+                localStorage.setItem('userRole', role)
+              }
               router.replace('/dashboard')
             }}
             className="w-full bg-emerald-600 hover:bg-emerald-700"
@@ -137,9 +149,11 @@ export function LoginForm() {
 
           <Button
             onClick={() => {
-              try { localStorage.setItem('autoJoin', '1') } catch (e) { }
-              localStorage.setItem('tempRole', role)
-              localStorage.setItem('userRole', role)
+              if (typeof window !== 'undefined') {
+                try { localStorage.setItem('autoJoin', '1') } catch (e) { }
+                localStorage.setItem('tempRole', role)
+                localStorage.setItem('userRole', role)
+              }
               router.replace('/dashboard')
             }}
             variant="outline"
