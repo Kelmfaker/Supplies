@@ -79,6 +79,7 @@ export function SupplyDashboard() {
   const [showImportQR, setShowImportQR] = useState(false)
   const [importQRText, setImportQRText] = useState("")
   const [isImporting, setIsImporting] = useState(false)
+  const [isExportingImage, setIsExportingImage] = useState(false)
   const [members, setMembers] = useState<Array<{ id: string; role: string; email?: string; phone?: string }>>([])
   const [inviteContact, setInviteContact] = useState<string>("")
   const [globalOpenState, setGlobalOpenState] = useState<boolean | null>(null)
@@ -827,93 +828,158 @@ export function SupplyDashboard() {
   }
 
   const handleExportAsImage = async () => {
-    const neededItems = supplies.filter((s) => s.status === "low" || s.status === "out")
+    if (isExportingImage) return // Prevent multiple simultaneous exports
+    
+    try {
+      setIsExportingImage(true)
+      
+      const neededItems = supplies.filter((s) => s.status === "low" || s.status === "out")
 
-    if (neededItems.length === 0) {
-      alert("No items need to be bought!")
-      return
-    }
-
-    const itemsByCategory: Record<string, Supply[]> = {}
-    neededItems.forEach((item) => {
-      if (!itemsByCategory[item.category]) {
-        itemsByCategory[item.category] = []
+      if (neededItems.length === 0) {
+        alert("No items need to be bought!")
+        return
       }
-      itemsByCategory[item.category].push(item)
-    })
 
-    const canvas = document.createElement("canvas")
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
+      // Check if browser supports required APIs
+      if (typeof document === 'undefined') {
+        alert("Export as image is not available in this environment")
+        return
+      }
 
-    const padding = 40
-    const lineHeight = 30
-    const categoryHeight = 40
-    const headerHeight = 80
-    let totalHeight = headerHeight + padding * 2
+      if (!document.createElement || !window.URL || !window.URL.createObjectURL) {
+        alert("Your browser doesn't support image export. Please try a different browser.")
+        return
+      }
 
-    Object.values(itemsByCategory).forEach((items) => {
-      totalHeight += categoryHeight + items.length * lineHeight + 20
-    })
-
-    canvas.width = 800
-    canvas.height = totalHeight
-
-    ctx.fillStyle = "#ffffff"
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-    ctx.fillStyle = "#059669"
-    ctx.font = "bold 32px Arial"
-    ctx.fillText("🛒 Shopping List", padding, padding + 32)
-
-    ctx.fillStyle = "#6b7280"
-    ctx.font = "14px Arial"
-    ctx.fillText(`${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, padding, padding + 60)
-
-    let yPosition = headerHeight + padding
-
-    Object.entries(itemsByCategory).forEach(([categoryId, items]) => {
-      const category = categories.find((c) => c.id === categoryId)
-
-      ctx.fillStyle = "#0891b2"
-      ctx.font = "bold 24px Arial"
-      ctx.fillText(`${category?.icon || "📦"} ${category?.name || "Unknown"}`, padding, yPosition + 24)
-      yPosition += categoryHeight
-
-      items.forEach((item) => {
-        ctx.fillStyle = "#f0fdf4"
-        ctx.fillRect(padding, yPosition, canvas.width - padding * 2, lineHeight)
-
-        ctx.fillStyle = "#10b981"
-        ctx.fillRect(padding, yPosition, 4, lineHeight)
-
-        ctx.fillStyle = "#000000"
-        ctx.font = "16px Arial"
-        ctx.fillText(item.name, padding + 15, yPosition + 20)
-
-        const statusText = item.status === "low" ? "Low Stock" : "Out of Stock"
-        const statusX = canvas.width - padding - 100
-        ctx.fillStyle = item.status === "low" ? "#fef3c7" : "#fee2e2"
-        ctx.fillRect(statusX, yPosition + 5, 90, 20)
-        ctx.fillStyle = item.status === "low" ? "#92400e" : "#991b1b"
-        ctx.font = "bold 12px Arial"
-        ctx.fillText(statusText, statusX + 5, yPosition + 18)
-
-        yPosition += lineHeight
+      const itemsByCategory: Record<string, Supply[]> = {}
+      neededItems.forEach((item) => {
+        if (!itemsByCategory[item.category]) {
+          itemsByCategory[item.category] = []
+        }
+        itemsByCategory[item.category].push(item)
       })
 
-      yPosition += 20
+      const canvas = document.createElement("canvas")
+      const ctx = canvas.getContext("2d")
+      
+      if (!ctx) {
+        alert("Canvas is not supported in your browser. Please try the PDF export instead.")
+        return
+      }
+
+      // Check if toBlob is supported
+      if (!canvas.toBlob) {
+        alert("Image export is not supported in your browser. Please try the PDF export instead.")
+        return
+      }
+
+      const padding = 40
+      const lineHeight = 30
+      const categoryHeight = 40
+      const headerHeight = 80
+      let totalHeight = headerHeight + padding * 2
+
+      Object.values(itemsByCategory).forEach((items) => {
+        totalHeight += categoryHeight + items.length * lineHeight + 20
+      })
+
+      canvas.width = 800
+      canvas.height = totalHeight
+
+      // Set up font fallbacks
+      const fonts = {
+        title: "bold 32px system-ui, -apple-system, Arial, sans-serif",
+        subtitle: "14px system-ui, -apple-system, Arial, sans-serif", 
+        category: "bold 24px system-ui, -apple-system, Arial, sans-serif",
+        item: "16px system-ui, -apple-system, Arial, sans-serif",
+        status: "bold 12px system-ui, -apple-system, Arial, sans-serif"
+      }
+
+      ctx.fillStyle = "#ffffff"
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+      ctx.fillStyle = "#059669"
+      ctx.font = fonts.title
+      ctx.fillText("🛒 Shopping List", padding, padding + 32)
+
+      ctx.fillStyle = "#6b7280"
+      ctx.font = fonts.subtitle
+      ctx.fillText(`${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, padding, padding + 60)
+
+      let yPosition = headerHeight + padding
+
+      Object.entries(itemsByCategory).forEach(([categoryId, items]) => {
+        const category = categories.find((c) => c.id === categoryId)
+
+        ctx.fillStyle = "#0891b2"
+        ctx.font = fonts.category
+        ctx.fillText(`${category?.icon || "📦"} ${category?.name || "Unknown"}`, padding, yPosition + 24)
+        yPosition += categoryHeight
+
+        items.forEach((item) => {
+          ctx.fillStyle = "#f0fdf4"
+          ctx.fillRect(padding, yPosition, canvas.width - padding * 2, lineHeight)
+
+          ctx.fillStyle = "#10b981"
+          ctx.fillRect(padding, yPosition, 4, lineHeight)
+
+          ctx.fillStyle = "#000000"
+          ctx.font = fonts.item
+          ctx.fillText(item.name, padding + 15, yPosition + 20)
+
+          const statusText = item.status === "low" ? "Low Stock" : "Out of Stock"
+          const statusX = canvas.width - padding - 100
+          ctx.fillStyle = item.status === "low" ? "#fef3c7" : "#fee2e2"
+          ctx.fillRect(statusX, yPosition + 5, 90, 20)
+          ctx.fillStyle = item.status === "low" ? "#92400e" : "#991b1b"
+          ctx.font = fonts.status
+          ctx.fillText(statusText, statusX + 5, yPosition + 18)
+
+          yPosition += lineHeight
+        })
+
+        yPosition += 20
     })
 
-    canvas.toBlob((blob) => {
-      if (!blob) return
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = `shopping-list-${new Date().toISOString().split("T")[0]}.png`
-      a.click()
-      URL.revokeObjectURL(url)
-    })
+    // Try to export the canvas as an image
+    try {
+      await new Promise<void>((resolve, reject) => {
+        canvas.toBlob((blob) => {
+          try {
+            if (!blob) {
+              reject(new Error("Failed to create image blob"))
+              return
+            }
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement("a")
+            a.href = url
+            a.download = `shopping-list-${new Date().toISOString().split("T")[0]}.png`
+            a.click()
+            URL.revokeObjectURL(url)
+            resolve()
+          } catch (err) {
+            reject(err)
+          }
+        }, 'image/png', 0.9)
+      })
+      
+      console.log("[v0] Image exported successfully")
+    } catch (err) {
+      console.error("[v0] Failed to export image:", err)
+      alert("Failed to export image. Your browser might not support this feature. Please try the PDF export instead.")
+      
+      // Offer fallback option
+      const useFallback = confirm("Would you like to try an alternative export method? This will open a new tab with your shopping list.")
+      if (useFallback) {
+        try {
+          await exportAsHTMLFallback(neededItems, itemsByCategory)
+        } catch (fallbackErr) {
+          console.error("[v0] Fallback export also failed:", fallbackErr)
+          alert("All export methods failed. Please try the PDF export or copy the list manually.")
+        }
+      }
+      return
+    }
 
     // Send reminders to household members (e.g., husband) when wife "checks out" by exporting
     try {
@@ -922,6 +988,137 @@ export function SupplyDashboard() {
       console.error("[v0] Failed to send reminder after exporting image:", err)
       alert(`Failed to send reminders: ${err?.message || 'See console'}`)
     }
+    
+    } catch (error: any) {
+      console.error("[v0] Error in handleExportAsImage:", error)
+      alert(`Failed to export image: ${error?.message || 'Unknown error'}. Please try the PDF export instead.`)
+    } finally {
+      setIsExportingImage(false)
+    }
+  }
+  
+  const exportAsHTMLFallback = async (neededItems: Supply[], itemsByCategory: Record<string, Supply[]>) => {
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Shopping List</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <style>
+            body { 
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+              padding: 20px; 
+              max-width: 800px; 
+              margin: 0 auto; 
+              background: #f9fafb;
+            }
+            .container {
+              background: white;
+              padding: 40px;
+              border-radius: 8px;
+              box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            }
+            h1 { 
+              color: #059669; 
+              border-bottom: 3px solid #059669; 
+              padding-bottom: 10px; 
+              margin-bottom: 20px;
+            }
+            h2 { 
+              color: #0891b2; 
+              margin-top: 30px; 
+              border-left: 4px solid #0891b2;
+              padding-left: 15px;
+            }
+            .item { 
+              padding: 15px; 
+              margin: 10px 0; 
+              background: #f0fdf4; 
+              border-left: 4px solid #10b981; 
+              border-radius: 4px;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+            }
+            .status { 
+              display: inline-block; 
+              padding: 4px 12px; 
+              border-radius: 16px; 
+              font-size: 12px; 
+              font-weight: bold; 
+            }
+            .status-low { 
+              background: #fef3c7; 
+              color: #92400e; 
+            }
+            .status-out { 
+              background: #fee2e2; 
+              color: #991b1b; 
+            }
+            .date { 
+              text-align: right; 
+              color: #6b7280; 
+              font-size: 14px; 
+              margin-top: 20px; 
+            }
+            .print-btn {
+              background: #059669;
+              color: white;
+              border: none;
+              padding: 10px 20px;
+              border-radius: 4px;
+              cursor: pointer;
+              margin: 20px 0;
+            }
+            @media print {
+              .print-btn { display: none; }
+              body { background: white; }
+              .container { box-shadow: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1>🛒 Shopping List</h1>
+            <button class="print-btn" onclick="window.print()">Print This List</button>
+            ${Object.entries(itemsByCategory)
+              .map(([categoryId, items]) => {
+                const category = categories.find((c) => c.id === categoryId)
+                return `
+                  <h2>${category?.icon || "📦"} ${category?.name || "Unknown"}</h2>
+                  ${items
+                    .map((item) => `
+                      <div class="item">
+                        <span>${item.name}</span>
+                        <span class="status ${item.status === "low" ? "status-low" : "status-out"}">
+                          ${item.status === "low" ? "Low Stock" : "Out of Stock"}
+                        </span>
+                      </div>
+                    `).join("")}
+                `
+              }).join("")}
+            <div class="date">
+              Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}
+            </div>
+          </div>
+        </body>
+      </html>
+    `
+
+    const blob = new Blob([htmlContent], { type: "text/html" })
+    const url = URL.createObjectURL(blob)
+    const newWindow = window.open(url, '_blank')
+    
+    if (!newWindow) {
+      // If popup blocked, try download
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `shopping-list-${new Date().toISOString().split("T")[0]}.html`
+      a.click()
+    }
+    
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
   const handleExportData = () => {
@@ -1443,9 +1640,9 @@ export function SupplyDashboard() {
             </CardDescription>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
               {userRole === 'husband' ? (
-                <Button onClick={handleExportAsImage} variant="outline" className="bg-white" disabled={isImporting}>
+                <Button onClick={handleExportAsImage} variant="outline" className="bg-white" disabled={isImporting || isExportingImage}>
                   <ImageIcon className="h-4 w-4 mr-2" />
-                  Export as Image
+                  {isExportingImage ? "Exporting..." : "Export as Image"}
                 </Button>
               ) : (
                 <>
@@ -1527,9 +1724,9 @@ export function SupplyDashboard() {
                   <CardDescription>{lowOrOutSupplies.length} item(s) are low or out of stock</CardDescription>
                 </div>
                 <div className="flex gap-2">
-                  <Button onClick={handleExportAsImage} variant="outline" className="bg-white" disabled={isImporting}>
+                  <Button onClick={handleExportAsImage} variant="outline" className="bg-white" disabled={isImporting || isExportingImage}>
                     <ImageIcon className="h-4 w-4 mr-2" />
-                    Export as Image
+                    {isExportingImage ? "Exporting..." : "Export as Image"}
                   </Button>
                   {/* Send via WhatsApp removed — use Export as Image/JSON or import flow instead */}
                 </div>
