@@ -83,6 +83,7 @@ export function SupplyDashboard() {
   const [members, setMembers] = useState<Array<{ id: string; role: string; email?: string; phone?: string }>>([])
   const [inviteContact, setInviteContact] = useState<string>("")
   const [globalOpenState, setGlobalOpenState] = useState<boolean | null>(null)
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
   const router = useRouter()
   const supabase = createClient()
 
@@ -372,16 +373,27 @@ export function SupplyDashboard() {
         },
         (payload) => {
           console.log("[v0] Supplies change received:", payload)
-          if (payload.eventType === "INSERT") {
-            setSupplies((prev) => [...prev, payload.new as Supply])
-          } else if (payload.eventType === "UPDATE") {
-            setSupplies((prev) => prev.map((s) => (s.id === payload.new.id ? (payload.new as Supply) : s)))
-          } else if (payload.eventType === "DELETE") {
-            setSupplies((prev) => prev.filter((s) => s.id !== payload.old.id))
+          try {
+            if (payload.eventType === "INSERT") {
+              setSupplies((prev) => [...prev, payload.new as Supply])
+            } else if (payload.eventType === "UPDATE") {
+              setSupplies((prev) => prev.map((s) => (s.id === payload.new.id ? (payload.new as Supply) : s)))
+            } else if (payload.eventType === "DELETE") {
+              setSupplies((prev) => prev.filter((s) => s.id !== payload.old.id))
+            }
+          } catch (err) {
+            console.error("[v0] Error handling supplies realtime update:", err)
           }
         },
       )
-      .subscribe()
+      .subscribe((status) => {
+        console.log("[v0] Supplies subscription status:", status)
+        if (status === 'SUBSCRIBED') {
+          setConnectionStatus('connected')
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          setConnectionStatus('disconnected')
+        }
+      })
 
     const categoriesChannel = supabase
       .channel(`categories-${houseId}`)
@@ -395,16 +407,28 @@ export function SupplyDashboard() {
         },
         (payload) => {
           console.log("[v0] Categories change received:", payload)
-          if (payload.eventType === "INSERT") {
-            const newCategory = {
-              id: payload.new.id,
-              name: payload.new.name,
-              icon: payload.new.icon,
-              isCustom: payload.new.is_custom,
+          try {
+            if (payload.eventType === "INSERT") {
+              const newCategory = {
+                id: payload.new.id,
+                name: payload.new.name,
+                icon: payload.new.icon,
+                isCustom: payload.new.is_custom,
+              }
+              setCategories((prev) => [...prev, newCategory])
+            } else if (payload.eventType === "UPDATE") {
+              const updatedCategory = {
+                id: payload.new.id,
+                name: payload.new.name,
+                icon: payload.new.icon,
+                isCustom: payload.new.is_custom,
+              }
+              setCategories((prev) => prev.map((c) => (c.id === updatedCategory.id ? updatedCategory : c)))
+            } else if (payload.eventType === "DELETE") {
+              setCategories((prev) => prev.filter((c) => c.id !== payload.old.id))
             }
-            setCategories((prev) => [...prev, newCategory])
-          } else if (payload.eventType === "DELETE") {
-            setCategories((prev) => prev.filter((c) => c.id !== payload.old.id))
+          } catch (err) {
+            console.error("[v0] Error handling categories realtime update:", err)
           }
         },
       )
@@ -422,16 +446,36 @@ export function SupplyDashboard() {
         },
         (payload) => {
           console.log("[v0] Notifications change received:", payload)
-          if (payload.eventType === "INSERT") {
-            const newNotification = {
-              id: payload.new.id,
-              itemName: payload.new.item_name,
-              category: payload.new.category,
-              status: payload.new.status,
-              timestamp: payload.new.timestamp,
-              isRead: payload.new.is_read,
+          try {
+            if (payload.eventType === "INSERT") {
+              const newNotification = {
+                id: payload.new.id,
+                itemName: payload.new.item_name,
+                category: payload.new.category,
+                status: payload.new.status,
+                timestamp: payload.new.timestamp,
+                isRead: payload.new.is_read,
+              }
+              setNotifications((prev) => [newNotification, ...prev])
+            } else if (payload.eventType === "UPDATE") {
+              const updatedNotification = {
+                id: payload.new.id,
+                itemName: payload.new.item_name,
+                category: payload.new.category,
+                status: payload.new.status,
+                timestamp: payload.new.timestamp,
+                isRead: payload.new.is_read,
+              }
+              setNotifications((prev) => 
+                prev.map((n) => n.id === updatedNotification.id ? updatedNotification : n)
+              )
+            } else if (payload.eventType === "DELETE") {
+              setNotifications((prev) => 
+                prev.filter((n) => n.id !== payload.old.id)
+              )
             }
-            setNotifications((prev) => [newNotification, ...prev])
+          } catch (err) {
+            console.error("[v0] Error handling notification realtime update:", err)
           }
         },
       )
@@ -564,14 +608,8 @@ export function SupplyDashboard() {
     setSupplies((prev) => prev.map((s) => (s.id === supplyId ? { ...s, status: newStatus } : s)))
 
     try {
-      const { error } = await supabase
-        .from("supplies")
-        .update({ status: newStatus, updated_at: new Date().toISOString() })
-        .eq("id", supplyId)
-        .eq("household_id", householdId)
-      if (error) {
-        throw error
-      }
+      // Use updateSupply to ensure notifications are triggered when items become low/out
+      await updateSupply(supplyId, { status: newStatus })
       // success; don't reload the whole list to preserve order
     } catch (error) {
       console.error("[v0] Error updating supply:", error)
@@ -594,7 +632,7 @@ export function SupplyDashboard() {
 
     try {
       await supabase.from("supplies").insert(newSupply)
-      if (householdId) await loadDataFromSupabase(householdId)
+      // Real-time subscription will handle the UI update automatically
     } catch (error) {
       console.error("[v0] Error adding supply:", error)
     }
@@ -607,7 +645,7 @@ export function SupplyDashboard() {
 
     try {
       await supabase.from("supplies").delete().eq("id", supplyId).eq("household_id", householdId)
-      if (householdId) await loadDataFromSupabase(householdId)
+      // Real-time subscription will handle the UI update automatically
     } catch (error) {
       console.error("[v0] Error deleting supply:", error)
     }
@@ -629,7 +667,7 @@ export function SupplyDashboard() {
       setNewCategoryName("")
       setNewCategoryIcon("")
       setShowAddCategory(false)
-      if (householdId) await loadDataFromSupabase(householdId)
+      // Real-time subscription will handle the UI update automatically
     } catch (error) {
       console.error("[v0] Error adding category:", error)
     }
@@ -643,7 +681,7 @@ export function SupplyDashboard() {
     try {
       await supabase.from("categories").delete().eq("id", categoryId).eq("household_id", householdId)
       await supabase.from("supplies").delete().eq("category", categoryId).eq("household_id", householdId)
-      if (householdId) await loadDataFromSupabase(householdId)
+      // Real-time subscriptions will handle the UI updates automatically
     } catch (error) {
       console.error("[v0] Error deleting category:", error)
     }
@@ -666,7 +704,18 @@ export function SupplyDashboard() {
     if (!householdId) return
     try {
       await supabase.from('supplies').update({ ...(updates.name !== undefined ? { name: updates.name } : {}), ...(updates.status !== undefined ? { status: updates.status } : {}) }).eq('id', supplyId).eq('household_id', householdId)
-      await loadDataFromSupabase(householdId)
+      // Real-time subscription will handle the UI update automatically
+      
+      // Auto-trigger notifications if status was changed to low or out
+      if (updates.status && (updates.status === 'low' || updates.status === 'out')) {
+        try {
+          console.log('[v0] Supply status changed to', updates.status, '- triggering notifications')
+          await handleSendNotification()
+        } catch (notifErr) {
+          console.error('[v0] Auto-notification failed:', notifErr)
+          // Don't fail the whole update if notification fails
+        }
+      }
     } catch (err) {
       console.error('[v0] Error updating supply:', err)
       alert('Failed to update item. See console for details.')
@@ -2045,10 +2094,15 @@ export function SupplyDashboard() {
             <h1 className="text-2xl font-bold text-emerald-700">Household Supplies</h1>
             <p className="text-sm text-muted-foreground flex items-center gap-2">
               Logged in as <Badge variant="secondary">{userRole}</Badge>
-              {isConnected ? (
+              {connectionStatus === 'connected' ? (
                 <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                   <Wifi className="h-3 w-3 mr-1" />
-                  Connected
+                  Live Sync
+                </Badge>
+              ) : connectionStatus === 'connecting' ? (
+                <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
+                  <Wifi className="h-3 w-3 mr-1" />
+                  Connecting...
                 </Badge>
               ) : (
                 <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
