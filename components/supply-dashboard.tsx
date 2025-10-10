@@ -833,10 +833,41 @@ export function SupplyDashboard() {
     try {
       setIsExportingImage(true)
       
+      // Detect mobile WebView environment
+      const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+      const isWebView = /wv|WebView/i.test(navigator.userAgent) || 
+                        (window.navigator as any).standalone === true || 
+                        window.matchMedia('(display-mode: standalone)').matches
+      const isMedianApp = window.location.href.includes('median.co') || 
+                          navigator.userAgent.includes('Median') ||
+                          (window as any).MedianNative !== undefined
+      
+      console.log('[v0] Environment detection:', { isMobile, isWebView, isMedianApp })
+      
       const neededItems = supplies.filter((s) => s.status === "low" || s.status === "out")
 
       if (neededItems.length === 0) {
         alert("No items need to be bought!")
+        return
+      }
+
+      // For mobile/WebView environments, try mobile-friendly export first
+      if (isMobile || isWebView || isMedianApp) {
+        console.log('[v0] Using mobile export method')
+        
+        // Special handling for Median.co apps
+        if (isMedianApp) {
+          console.log('[v0] Detected Median.co app environment')
+          // Median.co apps have specific limitations, use the most compatible method
+          try {
+            await exportForMedianApp(neededItems)
+            return
+          } catch (medianErr) {
+            console.log('[v0] Median-specific export failed, falling back to general mobile export:', medianErr)
+          }
+        }
+        
+        await exportForMobile(neededItems)
         return
       }
 
@@ -966,12 +997,37 @@ export function SupplyDashboard() {
       console.log("[v0] Image exported successfully")
     } catch (err) {
       console.error("[v0] Failed to export image:", err)
+      
+      // Mobile-specific error handling
+      const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+      
+      if (isMobile) {
+        alert("Image export failed on mobile. Trying alternative export method...")
+        try {
+          const neededItems = supplies.filter((s) => s.status === "low" || s.status === "out")
+          await exportForMobile(neededItems)
+          return
+        } catch (mobileErr) {
+          console.error("[v0] Mobile fallback also failed:", mobileErr)
+          alert("All export methods failed. Please try copying the shopping list manually or use the PDF export.")
+          return
+        }
+      }
+      
       alert("Failed to export image. Your browser might not support this feature. Please try the PDF export instead.")
       
       // Offer fallback option
       const useFallback = confirm("Would you like to try an alternative export method? This will open a new tab with your shopping list.")
       if (useFallback) {
         try {
+          const neededItems = supplies.filter((s) => s.status === "low" || s.status === "out")
+          const itemsByCategory: Record<string, Supply[]> = {}
+          neededItems.forEach((item) => {
+            if (!itemsByCategory[item.category]) {
+              itemsByCategory[item.category] = []
+            }
+            itemsByCategory[item.category].push(item)
+          })
           await exportAsHTMLFallback(neededItems, itemsByCategory)
         } catch (fallbackErr) {
           console.error("[v0] Fallback export also failed:", fallbackErr)
@@ -1119,6 +1175,276 @@ export function SupplyDashboard() {
     }
     
     setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+  
+  const exportForMobile = async (neededItems: Supply[]) => {
+    const itemsByCategory: Record<string, Supply[]> = {}
+    neededItems.forEach((item) => {
+      if (!itemsByCategory[item.category]) {
+        itemsByCategory[item.category] = []
+      }
+      itemsByCategory[item.category].push(item)
+    })
+
+    // Try Web Share API first (modern mobile browsers)
+    if (navigator.share) {
+      try {
+        const text = generateShoppingListText(neededItems, itemsByCategory)
+        await navigator.share({
+          title: '🛒 Shopping List',
+          text: text,
+        })
+        console.log('[v0] Successfully shared via Web Share API')
+        return
+      } catch (err) {
+        console.log('[v0] Web Share API failed:', err)
+        // Fall through to other methods
+      }
+    }
+
+    // Try canvas with mobile-specific settings
+    try {
+      await exportCanvasForMobile(neededItems, itemsByCategory)
+      return
+    } catch (err) {
+      console.log('[v0] Mobile canvas export failed:', err)
+    }
+
+    // Fallback to text-based share/copy
+    try {
+      const text = generateShoppingListText(neededItems, itemsByCategory)
+      
+      // Try clipboard API
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text)
+        alert('Shopping list copied to clipboard! You can paste it anywhere.')
+        return
+      }
+      
+      // Final fallback - show text in alert/prompt
+      const shouldCopy = confirm(`Canvas export not available on mobile. Would you like to copy the shopping list as text instead?\n\nPreview:\n${text.substring(0, 200)}...`)
+      if (shouldCopy) {
+        // Create temporary textarea for copy (older mobile browsers)
+        const textarea = document.createElement('textarea')
+        textarea.value = text
+        document.body.appendChild(textarea)
+        textarea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textarea)
+        alert('Shopping list copied to clipboard!')
+      }
+    } catch (err) {
+      console.error('[v0] All mobile export methods failed:', err)
+      alert('Unable to export on this device. Please use the PDF export or manually copy the items.')
+    }
+  }
+
+  const generateShoppingListText = (neededItems: Supply[], itemsByCategory: Record<string, Supply[]>): string => {
+    let text = '🛒 Shopping List\n'
+    text += `Generated on ${new Date().toLocaleDateString()}\n\n`
+    
+    Object.entries(itemsByCategory).forEach(([categoryId, items]) => {
+      const category = categories.find((c) => c.id === categoryId)
+      text += `${category?.icon || "📦"} ${category?.name || "Unknown"}:\n`
+      items.forEach((item) => {
+        const status = item.status === "low" ? "Low Stock" : "Out of Stock"
+        text += `• ${item.name} (${status})\n`
+      })
+      text += '\n'
+    })
+    
+    return text
+  }
+
+  const exportCanvasForMobile = async (neededItems: Supply[], itemsByCategory: Record<string, Supply[]>): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      try {
+        const canvas = document.createElement("canvas")
+        const ctx = canvas.getContext("2d")
+        
+        if (!ctx) {
+          reject(new Error("Canvas not supported"))
+          return
+        }
+
+        // Mobile-optimized canvas settings
+        const scale = window.devicePixelRatio || 1
+        const padding = 20 * scale
+        const lineHeight = 40 * scale
+        const categoryHeight = 50 * scale
+        const headerHeight = 80 * scale
+        
+        let totalHeight = headerHeight + padding * 2
+        Object.values(itemsByCategory).forEach((items) => {
+          totalHeight += categoryHeight + items.length * lineHeight + 20 * scale
+        })
+
+        canvas.width = 400 * scale  // Smaller width for mobile
+        canvas.height = totalHeight
+        
+        // Scale the context for high DPI displays
+        ctx.scale(scale, scale)
+        
+        const width = canvas.width / scale
+        const height = canvas.height / scale
+
+        // Set up mobile-friendly fonts
+        const fonts = {
+          title: `bold ${24}px system-ui, -apple-system, Roboto, sans-serif`,
+          subtitle: `${12}px system-ui, -apple-system, Roboto, sans-serif`, 
+          category: `bold ${18}px system-ui, -apple-system, Roboto, sans-serif`,
+          item: `${14}px system-ui, -apple-system, Roboto, sans-serif`,
+          status: `bold ${10}px system-ui, -apple-system, Roboto, sans-serif`
+        }
+
+        // White background
+        ctx.fillStyle = "#ffffff"
+        ctx.fillRect(0, 0, width, height)
+
+        // Title
+        ctx.fillStyle = "#059669"
+        ctx.font = fonts.title
+        ctx.fillText("🛒 Shopping List", padding / scale, (padding + 24 * scale) / scale)
+
+        // Date
+        ctx.fillStyle = "#6b7280"
+        ctx.font = fonts.subtitle
+        ctx.fillText(`${new Date().toLocaleDateString()}`, padding / scale, (padding + 50 * scale) / scale)
+
+        let yPosition = (headerHeight + padding) / scale
+
+        Object.entries(itemsByCategory).forEach(([categoryId, items]) => {
+          const category = categories.find((c) => c.id === categoryId)
+
+          // Category header
+          ctx.fillStyle = "#0891b2"
+          ctx.font = fonts.category
+          ctx.fillText(`${category?.icon || "📦"} ${category?.name || "Unknown"}`, padding / scale, yPosition + 18)
+          yPosition += categoryHeight / scale
+
+          items.forEach((item) => {
+            // Item background
+            ctx.fillStyle = "#f0fdf4"
+            ctx.fillRect(padding / scale, yPosition, (width - padding * 2) / scale, lineHeight / scale)
+
+            // Left border
+            ctx.fillStyle = "#10b981"
+            ctx.fillRect(padding / scale, yPosition, 4 / scale, lineHeight / scale)
+
+            // Item name
+            ctx.fillStyle = "#000000"
+            ctx.font = fonts.item
+            ctx.fillText(item.name, (padding + 15 * scale) / scale, yPosition + 20 / scale)
+
+            // Status badge
+            const statusText = item.status === "low" ? "Low" : "Out"
+            const statusX = (width - padding - 60 * scale) / scale
+            ctx.fillStyle = item.status === "low" ? "#fef3c7" : "#fee2e2"
+            ctx.fillRect(statusX, yPosition + 5 / scale, 50 / scale, 15 / scale)
+            ctx.fillStyle = item.status === "low" ? "#92400e" : "#991b1b"
+            ctx.font = fonts.status
+            ctx.fillText(statusText, statusX + 2 / scale, yPosition + 14 / scale)
+
+            yPosition += lineHeight / scale
+          })
+
+          yPosition += 20 / scale
+        })
+
+        // Convert to blob with mobile-optimized settings
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            reject(new Error("Failed to create image blob"))
+            return
+          }
+
+          // For mobile, try different download methods
+          try {
+            const url = URL.createObjectURL(blob)
+            
+            // Try creating a download link
+            const a = document.createElement("a")
+            a.href = url
+            a.download = `shopping-list-${new Date().toISOString().split("T")[0]}.png`
+            
+            // For mobile WebView, try different approaches
+            document.body.appendChild(a)
+            a.click()
+            document.body.removeChild(a)
+            
+            setTimeout(() => URL.revokeObjectURL(url), 1000)
+            resolve()
+          } catch (err) {
+            reject(err)
+          }
+        }, 'image/png', 0.8) // Lower quality for smaller file size on mobile
+        
+      } catch (err) {
+        reject(err)
+      }
+    })
+  }
+  
+  const exportForMedianApp = async (neededItems: Supply[]): Promise<void> => {
+    // Median.co apps have strict limitations on file downloads and canvas operations
+    // Use the most reliable method: text-based sharing or clipboard
+    
+    const itemsByCategory: Record<string, Supply[]> = {}
+    neededItems.forEach((item) => {
+      if (!itemsByCategory[item.category]) {
+        itemsByCategory[item.category] = []
+      }
+      itemsByCategory[item.category].push(item)
+    })
+
+    const text = generateShoppingListText(neededItems, itemsByCategory)
+    
+    // Try clipboard first (most reliable in WebView)
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text)
+        alert('✅ Shopping list copied to clipboard!\n\nYou can now paste it in any messaging app, notes, or share it with others.')
+        return
+      }
+    } catch (clipboardErr) {
+      console.log('[v0] Clipboard API failed in Median app:', clipboardErr)
+    }
+    
+    // Fallback: Try Web Share API (if available in Median)
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: '🛒 Shopping List',
+          text: text,
+        })
+        return
+      }
+    } catch (shareErr) {
+      console.log('[v0] Web Share API failed in Median app:', shareErr)
+    }
+    
+    // Final fallback: Manual copy with textarea (most compatible)
+    try {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      
+      const successful = document.execCommand('copy')
+      document.body.removeChild(textarea)
+      
+      if (successful) {
+        alert('✅ Shopping list copied to clipboard!\n\nYou can now paste it in any messaging app or notes.')
+      } else {
+        throw new Error('Copy command failed')
+      }
+    } catch (err) {
+      console.error('[v0] All copy methods failed in Median app:', err)
+      // Show the text in a prompt as last resort
+      alert(`Unable to copy automatically. Here's your shopping list:\n\n${text}\n\nYou can manually copy this text.`)
+    }
   }
 
   const handleExportData = () => {
