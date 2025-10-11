@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { SupplyCategory } from "@/components/supply-category"
-import { LogOut, Bell, Plus, X, QrCode, FileText, ImageIcon, Wifi, WifiOff, Download, Upload } from "lucide-react"
+import { LogOut, Bell, Plus, X, QrCode, FileText, ImageIcon, Wifi, WifiOff, Download, Upload, Copy } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 
 export type Supply = {
@@ -120,10 +120,9 @@ export function SupplyDashboard() {
       if (savedHouseholdId) {
         setHouseholdId(savedHouseholdId)
         setIsConnected(true)
-  await loadDataFromSupabase(savedHouseholdId)
-  const cleanupRealtime = setupRealtimeSubscription(savedHouseholdId)
-  const cleanupMembers = setupMembersSubscription(savedHouseholdId)
-  // ensure both cleanups are available if needed later (not stored in this ref but will be removed on unmount via supabase.removeChannel)
+        await loadDataFromSupabase(savedHouseholdId)
+        // Real-time subscriptions will be handled by the dedicated useEffect
+        
         // load current household members so both partners see invites
         try {
           await loadMembers(savedHouseholdId)
@@ -178,8 +177,7 @@ export function SupplyDashboard() {
               localStorage.setItem('userRole', chosenRole)
 
               await loadDataFromSupabase(hid)
-              setupRealtimeSubscription(hid)
-              setupMembersSubscription(hid)
+              // Real-time subscriptions will be handled by the dedicated useEffect
               try {
                 await loadMembers(hid)
               } catch (err) {
@@ -204,6 +202,30 @@ export function SupplyDashboard() {
 
     init()
   }, [router])
+
+  // Real-time subscription management - handles setup and cleanup when household changes
+  useEffect(() => {
+    if (!householdId) {
+      console.log("[v0] No household ID, skipping real-time setup")
+      return
+    }
+
+    console.log("[v0] Setting up real-time subscriptions for household:", householdId)
+    
+    // Setup subscriptions
+    const cleanupRealtime = setupRealtimeSubscription(householdId)
+    const cleanupMembers = setupMembersSubscription(householdId)
+
+    // Force reload data to ensure we have latest state when subscriptions start
+    loadDataFromSupabase(householdId)
+
+    // Cleanup function - called when householdId changes or component unmounts
+    return () => {
+      console.log("[v0] Cleaning up real-time subscriptions for household:", householdId)
+      if (cleanupRealtime) cleanupRealtime()
+      if (cleanupMembers) cleanupMembers()
+    }
+  }, [householdId]) // Re-run when householdId changes
 
   const loadDataFromSupabase = async (houseId: string) => {
     try {
@@ -373,13 +395,29 @@ export function SupplyDashboard() {
         },
         (payload) => {
           console.log("[v0] Supplies change received:", payload)
+          console.log("[v0] Current supplies count before update:", supplies.length)
           try {
             if (payload.eventType === "INSERT") {
-              setSupplies((prev) => [...prev, payload.new as Supply])
+              console.log("[v0] Adding new supply:", payload.new)
+              setSupplies((prev) => {
+                const newSupplies = [...prev, payload.new as Supply]
+                console.log("[v0] Supplies after INSERT:", newSupplies.length)
+                return newSupplies
+              })
             } else if (payload.eventType === "UPDATE") {
-              setSupplies((prev) => prev.map((s) => (s.id === payload.new.id ? (payload.new as Supply) : s)))
+              console.log("[v0] Updating supply:", payload.new.id, payload.new)
+              setSupplies((prev) => {
+                const updated = prev.map((s) => (s.id === payload.new.id ? (payload.new as Supply) : s))
+                console.log("[v0] Supplies after UPDATE:", updated.length)
+                return updated
+              })
             } else if (payload.eventType === "DELETE") {
-              setSupplies((prev) => prev.filter((s) => s.id !== payload.old.id))
+              console.log("[v0] Deleting supply:", payload.old.id)
+              setSupplies((prev) => {
+                const filtered = prev.filter((s) => s.id !== payload.old.id)
+                console.log("[v0] Supplies after DELETE:", filtered.length)
+                return filtered
+              })
             }
           } catch (err) {
             console.error("[v0] Error handling supplies realtime update:", err)
@@ -390,8 +428,12 @@ export function SupplyDashboard() {
         console.log("[v0] Supplies subscription status:", status)
         if (status === 'SUBSCRIBED') {
           setConnectionStatus('connected')
+          setIsConnected(true)
         } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           setConnectionStatus('disconnected')
+          setIsConnected(false)
+        } else {
+          setConnectionStatus('connecting')
         }
       })
 
@@ -407,6 +449,7 @@ export function SupplyDashboard() {
         },
         (payload) => {
           console.log("[v0] Categories change received:", payload)
+          console.log("[v0] Current categories count before update:", categories.length)
           try {
             if (payload.eventType === "INSERT") {
               const newCategory = {
@@ -415,7 +458,12 @@ export function SupplyDashboard() {
                 icon: payload.new.icon,
                 isCustom: payload.new.is_custom,
               }
-              setCategories((prev) => [...prev, newCategory])
+              console.log("[v0] Adding new category:", newCategory)
+              setCategories((prev) => {
+                const newCategories = [...prev, newCategory]
+                console.log("[v0] Categories after INSERT:", newCategories.length)
+                return newCategories
+              })
             } else if (payload.eventType === "UPDATE") {
               const updatedCategory = {
                 id: payload.new.id,
@@ -423,9 +471,19 @@ export function SupplyDashboard() {
                 icon: payload.new.icon,
                 isCustom: payload.new.is_custom,
               }
-              setCategories((prev) => prev.map((c) => (c.id === updatedCategory.id ? updatedCategory : c)))
+              console.log("[v0] Updating category:", updatedCategory)
+              setCategories((prev) => {
+                const updated = prev.map((c) => (c.id === updatedCategory.id ? updatedCategory : c))
+                console.log("[v0] Categories after UPDATE:", updated.length)
+                return updated
+              })
             } else if (payload.eventType === "DELETE") {
-              setCategories((prev) => prev.filter((c) => c.id !== payload.old.id))
+              console.log("[v0] Deleting category:", payload.old.id)
+              setCategories((prev) => {
+                const filtered = prev.filter((c) => c.id !== payload.old.id)
+                console.log("[v0] Categories after DELETE:", filtered.length)
+                return filtered
+              })
             }
           } catch (err) {
             console.error("[v0] Error handling categories realtime update:", err)
@@ -497,8 +555,7 @@ export function SupplyDashboard() {
     setIsConnected(true)
     setShowSetup(false)
     initializeDefaultCategories(code)
-    setupRealtimeSubscription(code)
-    setupMembersSubscription(code)
+    // Real-time subscriptions will be handled by the dedicated useEffect
   }
 
   const handleJoinHousehold = () => {
@@ -511,8 +568,7 @@ export function SupplyDashboard() {
     setIsConnected(true)
     setShowSetup(false)
     loadDataFromSupabase(trimmed)
-    setupRealtimeSubscription(trimmed)
-    setupMembersSubscription(trimmed)
+    // Real-time subscriptions will be handled by the dedicated useEffect
   }
 
   // Invite-by-email / join-by-email removed. Use household code generation and manual sharing instead.
@@ -583,7 +639,7 @@ export function SupplyDashboard() {
         localStorage.setItem('userRole', chosenRole)
 
         await loadDataFromSupabase(hid)
-          setupRealtimeSubscription(hid)
+        // Real-time subscriptions will be handled by the dedicated useEffect
           try {
             await loadMembers(hid)
           } catch (err) {
@@ -953,73 +1009,127 @@ export function SupplyDashboard() {
         return
       }
 
-      const padding = 40
-      const lineHeight = 30
-      const categoryHeight = 40
-      const headerHeight = 80
+      const padding = 48
+      const lineHeight = 36
+      const categoryHeight = 50
+      const headerHeight = 120
       let totalHeight = headerHeight + padding * 2
 
       Object.values(itemsByCategory).forEach((items) => {
-        totalHeight += categoryHeight + items.length * lineHeight + 20
+        totalHeight += categoryHeight + items.length * lineHeight + 30
       })
 
-      canvas.width = 800
+      // Make canvas larger for better quality
+      canvas.width = 900
       canvas.height = totalHeight
 
-      // Set up font fallbacks
+      // Set up improved fonts with better sizing
       const fonts = {
-        title: "bold 32px system-ui, -apple-system, Arial, sans-serif",
-        subtitle: "14px system-ui, -apple-system, Arial, sans-serif", 
-        category: "bold 24px system-ui, -apple-system, Arial, sans-serif",
-        item: "16px system-ui, -apple-system, Arial, sans-serif",
-        status: "bold 12px system-ui, -apple-system, Arial, sans-serif"
+        title: "bold 36px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif",
+        subtitle: "16px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif", 
+        category: "bold 26px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif",
+        item: "18px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif",
+        status: "bold 14px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif"
       }
 
-      ctx.fillStyle = "#ffffff"
+      // Create gradient background
+      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height)
+      gradient.addColorStop(0, "#f0fdf4")
+      gradient.addColorStop(1, "#ecfdf5")
+      ctx.fillStyle = gradient
       ctx.fillRect(0, 0, canvas.width, canvas.height)
 
+      // Add subtle border
+      ctx.strokeStyle = "#d1fae5"
+      ctx.lineWidth = 3
+      ctx.strokeRect(0, 0, canvas.width, canvas.height)
+
+      // Header section with better styling
       ctx.fillStyle = "#059669"
       ctx.font = fonts.title
-      ctx.fillText("🛒 Shopping List", padding, padding + 32)
+      const titleText = "🛒 Shopping List"
+      const titleWidth = ctx.measureText(titleText).width
+      ctx.fillText(titleText, (canvas.width - titleWidth) / 2, padding + 40)
 
+      // Add household info
       ctx.fillStyle = "#6b7280"
       ctx.font = fonts.subtitle
-      ctx.fillText(`${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, padding, padding + 60)
+      const dateText = `Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}`
+      const dateWidth = ctx.measureText(dateText).width
+      ctx.fillText(dateText, (canvas.width - dateWidth) / 2, padding + 70)
+      
+      const itemCountText = `${neededItems.length} item${neededItems.length !== 1 ? 's' : ''} to buy`
+      const countWidth = ctx.measureText(itemCountText).width
+      ctx.fillText(itemCountText, (canvas.width - countWidth) / 2, padding + 95)
 
       let yPosition = headerHeight + padding
 
       Object.entries(itemsByCategory).forEach(([categoryId, items]) => {
         const category = categories.find((c) => c.id === categoryId)
 
-        ctx.fillStyle = "#0891b2"
+        // Category header with improved styling
+        ctx.fillStyle = "#10b981"
+        ctx.fillRect(padding, yPosition, canvas.width - padding * 2, categoryHeight)
+        
+        // Add rounded corners effect with border
+        ctx.strokeStyle = "#059669"
+        ctx.lineWidth = 2
+        ctx.strokeRect(padding, yPosition, canvas.width - padding * 2, categoryHeight)
+
+        ctx.fillStyle = "#ffffff"
         ctx.font = fonts.category
-        ctx.fillText(`${category?.icon || "📦"} ${category?.name || "Unknown"}`, padding, yPosition + 24)
-        yPosition += categoryHeight
+        const categoryText = `${category?.icon || "📦"} ${category?.name || "Unknown"}`
+        const categoryTextWidth = ctx.measureText(categoryText).width
+        ctx.fillText(categoryText, padding + 20, yPosition + 32)
+        
+        // Add item count for category
+        ctx.fillStyle = "#d1fae5"
+        ctx.font = fonts.status
+        const countText = `${items.length} item${items.length !== 1 ? 's' : ''}`
+        const countTextWidth = ctx.measureText(countText).width
+        ctx.fillText(countText, canvas.width - padding - countTextWidth - 20, yPosition + 32)
+        
+        yPosition += categoryHeight + 10
 
-        items.forEach((item) => {
-          ctx.fillStyle = "#f0fdf4"
-          ctx.fillRect(padding, yPosition, canvas.width - padding * 2, lineHeight)
+        items.forEach((item, index) => {
+          // Alternating row colors for better readability
+          ctx.fillStyle = index % 2 === 0 ? "#ffffff" : "#f8fafc"
+          ctx.fillRect(padding + 10, yPosition, canvas.width - padding * 2 - 20, lineHeight)
 
-          ctx.fillStyle = "#10b981"
-          ctx.fillRect(padding, yPosition, 4, lineHeight)
+          // Left border indicator
+          ctx.fillStyle = item.status === "low" ? "#f59e0b" : "#ef4444"
+          ctx.fillRect(padding + 10, yPosition, 6, lineHeight)
 
-          ctx.fillStyle = "#000000"
+          // Item name with better positioning
+          ctx.fillStyle = "#1f2937"
           ctx.font = fonts.item
-          ctx.fillText(item.name, padding + 15, yPosition + 20)
+          ctx.fillText(item.name, padding + 30, yPosition + 24)
 
+          // Status badge with improved design
           const statusText = item.status === "low" ? "Low Stock" : "Out of Stock"
-          const statusX = canvas.width - padding - 100
+          const statusWidth = 120
+          const statusX = canvas.width - padding - statusWidth - 20
+          
+          // Status background
           ctx.fillStyle = item.status === "low" ? "#fef3c7" : "#fee2e2"
-          ctx.fillRect(statusX, yPosition + 5, 90, 20)
+          ctx.fillRect(statusX, yPosition + 6, statusWidth, 24)
+          
+          // Status border
+          ctx.strokeStyle = item.status === "low" ? "#f59e0b" : "#ef4444"
+          ctx.lineWidth = 1
+          ctx.strokeRect(statusX, yPosition + 6, statusWidth, 24)
+          
+          // Status text
           ctx.fillStyle = item.status === "low" ? "#92400e" : "#991b1b"
           ctx.font = fonts.status
-          ctx.fillText(statusText, statusX + 5, yPosition + 18)
+          const statusTextWidth = ctx.measureText(statusText).width
+          ctx.fillText(statusText, statusX + (statusWidth - statusTextWidth) / 2, yPosition + 21)
 
           yPosition += lineHeight
         })
 
         yPosition += 20
-    })
+      })
 
     // Try to export the canvas as an image
     try {
@@ -2089,74 +2199,79 @@ export function SupplyDashboard() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50">
       <header className="bg-white border-b shadow-sm">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-emerald-700">Household Supplies</h1>
-            <p className="text-sm text-muted-foreground flex items-center gap-2">
-              Logged in as <Badge variant="secondary">{userRole}</Badge>
-              {connectionStatus === 'connected' ? (
-                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                  <Wifi className="h-3 w-3 mr-1" />
-                  Live Sync
-                </Badge>
-              ) : connectionStatus === 'connecting' ? (
-                <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
-                  <Wifi className="h-3 w-3 mr-1" />
-                  Connecting...
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
-                  <WifiOff className="h-3 w-3 mr-1" />
-                  Offline
-                </Badge>
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-xl sm:text-2xl font-bold text-emerald-700 truncate">Household Supplies</h1>
+              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  Logged in as <Badge variant="secondary" className="text-xs">{userRole}</Badge>
+                </span>
+                {connectionStatus === 'connected' ? (
+                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs">
+                    <Wifi className="h-3 w-3 mr-1" />
+                    Live Sync
+                  </Badge>
+                ) : connectionStatus === 'connecting' ? (
+                  <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200 text-xs">
+                    <Wifi className="h-3 w-3 mr-1" />
+                    Connecting...
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 text-xs">
+                    <WifiOff className="h-3 w-3 mr-1" />
+                    Offline
+                  </Badge>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+              {userRole === "husband" && (
+                <Button variant="outline" size="sm" onClick={() => router.push("/notifications")} className="flex-shrink-0">
+                  <Bell className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Notifications</span>
+                </Button>
               )}
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            {userRole === "husband" && (
-              <Button variant="outline" onClick={() => router.push("/notifications")}>
-                <Bell className="h-4 w-4 mr-2" />
-                Notifications
-                {lowOrOutSupplies.length > 0 && <Badge className="ml-2 bg-red-500">{lowOrOutSupplies.length}</Badge>}
+              <Button onClick={handleLogout} variant="outline" size="sm" className="flex-shrink-0">
+                <LogOut className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Logout</span>
               </Button>
-            )}
-            {!userRole ? (
-              <Button variant="outline" onClick={handleCheckSession}>Login</Button>
-            ) : (
-              <Button variant="outline" onClick={handleLogout}>
-                <LogOut className="h-4 w-4 mr-2" />
-                Logout
-              </Button>
-            )}
+            </div>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8">
-        <Card className="mb-6 border-blue-200 bg-blue-50">
-          <CardHeader>
-            <CardTitle className="text-blue-700">Household Code</CardTitle>
-            <CardDescription className="mt-2">
-              Share this code with your partner to sync devices in real-time
-            </CardDescription>
-            <div className="flex items-center gap-3 mt-4">
-              <code className="flex-1 text-xl font-bold bg-white p-3 rounded border text-center">{householdId}</code>
-              <Button
-                onClick={() => {
-                  navigator.clipboard.writeText(householdId || "")
-                  alert("Code copied to clipboard!")
-                }}
-                variant="outline"
-                className="bg-white"
-              >
-                Copy Code
-              </Button>
-             
-            </div>
-            {householdId && (
-              <div className="mt-4 p-3 bg-white border border-blue-100 rounded">
-                <p className="text-sm font-medium text-blue-700 mb-2">Share this household code</p>
-                <p className="text-xs text-muted-foreground mt-2">Share the code above with your partner so they can join using the "Enter Household Code" option.</p>
+      <main className="container mx-auto px-4 py-8 max-w-7xl">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+          <Card className="lg:col-span-2 border-blue-200 bg-blue-50">
+            <CardHeader>
+              <CardTitle className="text-blue-700 text-lg sm:text-xl">Household Code</CardTitle>
+              <CardDescription className="mt-2 text-sm">
+                Share this code with your partner to sync devices in real-time
+              </CardDescription>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mt-4">
+                <code className="flex-1 text-lg sm:text-xl font-bold bg-white p-3 rounded border text-center min-h-[48px] flex items-center justify-center">{householdId}</code>
+                <Button
+                  onClick={() => {
+                    navigator.clipboard.writeText(householdId || "")
+                    alert("Code copied to clipboard!")
+                  }}
+                  variant="outline"
+                  size="sm"
+                  className="bg-white min-h-[48px] px-4"
+                >
+                  <Copy className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Copy Code</span>
+                </Button>
+              </div>
+              {householdId && (
+                <div className="mt-4 p-3 bg-white border border-blue-100 rounded">
+                  <p className="text-sm font-medium text-blue-700 mb-2">Share this household code</p>
+                  <p className="text-xs text-muted-foreground">Share the code above with your partner so they can join using the "Enter Household Code" option.</p>
+                </div>
+              )}
+            </CardHeader>
+          </Card>
                 {/* Household members view removed to simplify the UI */}
                 {/* Invite partner zone removed as requested */}
               </div>
@@ -2164,103 +2279,72 @@ export function SupplyDashboard() {
           </CardHeader>
         </Card>
 
-        <Card className="mb-6 border-purple-200 bg-purple-50">
-          <CardHeader>
-            <CardTitle className="text-purple-700">Backup & Manual Sync</CardTitle>
-            <CardDescription className="mt-2">
-              Export, import, or share data manually as a backup or alternative to real-time sync
-            </CardDescription>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
-              {userRole === 'husband' ? (
-                <Button onClick={handleExportAsImage} variant="outline" className="bg-white" disabled={isImporting || isExportingImage}>
-                  <ImageIcon className="h-4 w-4 mr-2" />
-                  {isExportingImage ? "Exporting..." : "Export as Image"}
-                </Button>
-              ) : (
-                <>
-                  <Button onClick={handleExportData} variant="outline" className="bg-white" disabled={isImporting}>
-                    <Download className="h-4 w-4 mr-2" />
-                    Export JSON
+          <Card className="border-purple-200 bg-purple-50">
+            <CardHeader>
+              <CardTitle className="text-purple-700 text-lg">Backup & Export</CardTitle>
+              <CardDescription className="text-sm">
+                Export or share your supply list
+              </CardDescription>
+              <div className="flex flex-col gap-3 mt-4">
+                {userRole === 'husband' ? (
+                  <Button 
+                    onClick={handleExportAsImage} 
+                    variant="outline" 
+                    className="bg-white w-full justify-start" 
+                    disabled={isImporting || isExportingImage}
+                    size="sm"
+                  >
+                    <ImageIcon className="h-4 w-4 mr-2" />
+                    {isExportingImage ? "Exporting..." : "Export as Image"}
                   </Button>
-                  <Button onClick={handleImportData} variant="outline" className="bg-white" disabled={isImporting}>
-                    <Upload className="h-4 w-4 mr-2" />
-                    {isImporting ? "Importing..." : "Import JSON"}
-                  </Button>
-                </>
-              )}
-              {/* QR generate/import intentionally hidden to simplify invite workflow */}
-            </div>
-
-            {showQRCode && (
-              <div className="mt-4 p-4 bg-white border border-purple-200 rounded">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-semibold text-purple-700">Share This Code</h3>
-                  <Button variant="ghost" size="sm" onClick={() => setShowQRCode(false)}>
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-                <textarea
-                  readOnly
-                  value={qrCodeText}
-                  className="w-full h-32 p-2 border rounded text-xs font-mono"
-                  onClick={(e) => e.currentTarget.select()}
-                />
-                <Button
-                  onClick={() => {
-                    navigator.clipboard.writeText(qrCodeText)
-                    alert("Code copied to clipboard!")
-                  }}
-                  className="w-full mt-2 bg-purple-600 hover:bg-purple-700"
-                >
-                  Copy Code
-                </Button>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Share this code via messaging app, email, or any text method
-                </p>
+                ) : (
+                  <>
+                    <Button 
+                      onClick={handleExportData} 
+                      variant="outline" 
+                      className="bg-white w-full justify-start" 
+                      disabled={isImporting}
+                      size="sm"
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Export JSON
+                    </Button>
+                    <Button 
+                      onClick={handleImportData} 
+                      variant="outline" 
+                      className="bg-white w-full justify-start" 
+                      disabled={isImporting}
+                      size="sm"
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      {isImporting ? "Importing..." : "Import JSON"}
+                    </Button>
+                  </>
+                )}
               </div>
-            )}
-
-            {showImportQR && (
-              <div className="mt-4 p-4 bg-white border border-purple-200 rounded">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-semibold text-purple-700">Paste Code to Import</h3>
-                  <Button variant="ghost" size="sm" onClick={() => setShowImportQR(false)} disabled={isImporting}>
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-                <textarea
-                  value={importQRText}
-                  onChange={(e) => setImportQRText(e.target.value)}
-                  placeholder="Paste the code here..."
-                  className="w-full h-32 p-2 border rounded text-xs font-mono"
-                  disabled={isImporting}
-                />
-                <Button
-                  onClick={handleImportQR}
-                  className="w-full mt-2 bg-purple-600 hover:bg-purple-700"
-                  disabled={isImporting || !importQRText.trim()}
-                >
-                  {isImporting ? "Importing..." : "Import Data"}
-                </Button>
-              </div>
-            )}
-          </CardHeader>
-        </Card>
+            </CardHeader>
+          </Card>
+        </div>
 
         {userRole === "wife" && lowOrOutSupplies.length > 0 && (
           <Card className="mb-6 border-orange-200 bg-orange-50">
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-orange-700">Items Need Attention</CardTitle>
-                  <CardDescription>{lowOrOutSupplies.length} item(s) are low or out of stock</CardDescription>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <CardTitle className="text-orange-700 text-lg">Items Need Attention</CardTitle>
+                  <CardDescription className="text-sm">{lowOrOutSupplies.length} item(s) are low or out of stock</CardDescription>
                 </div>
-                <div className="flex gap-2">
-                  <Button onClick={handleExportAsImage} variant="outline" className="bg-white" disabled={isImporting || isExportingImage}>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Button 
+                    onClick={handleExportAsImage} 
+                    variant="outline" 
+                    className="bg-white" 
+                    size="sm"
+                    disabled={isImporting || isExportingImage}
+                  >
                     <ImageIcon className="h-4 w-4 mr-2" />
                     {isExportingImage ? "Exporting..." : "Export as Image"}
                   </Button>
-                  {/* Send via WhatsApp removed — use Export as Image/JSON or import flow instead */}
                 </div>
               </div>
             </CardHeader>
@@ -2270,7 +2354,7 @@ export function SupplyDashboard() {
         {userRole === "wife" && (
           <div className="mb-6">
             {!showAddCategory ? (
-              <Button onClick={() => setShowAddCategory(true)} variant="outline" className="w-full md:w-auto">
+              <Button onClick={() => setShowAddCategory(true)} variant="outline" className="w-full sm:w-auto">
                 <Plus className="h-4 w-4 mr-2" />
                 Add New Category
               </Button>
@@ -2278,28 +2362,33 @@ export function SupplyDashboard() {
               <Card className="border-emerald-200 bg-emerald-50">
                 <CardHeader>
                   <div className="flex items-center justify-between mb-4">
-                    <CardTitle className="text-emerald-700">Create New Category</CardTitle>
+                    <CardTitle className="text-emerald-700 text-lg">Create New Category</CardTitle>
                     <Button variant="ghost" size="sm" onClick={() => setShowAddCategory(false)}>
                       <X className="h-4 w-4" />
                     </Button>
                   </div>
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <Input
-                      placeholder="Category name (e.g., Beverages)"
-                      value={newCategoryName}
-                      onChange={(e) => setNewCategoryName(e.target.value)}
-                      className="flex-1"
-                    />
-                    <Input
-                      placeholder="Icon (emoji, e.g., 🥤)"
-                      value={newCategoryIcon}
-                      onChange={(e) => setNewCategoryIcon(e.target.value)}
-                      className="w-full sm:w-24"
-                      maxLength={2}
-                    />
-                    <Button onClick={handleAddCategory} className="bg-emerald-600 hover:bg-emerald-700">
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <Input
+                        placeholder="Category name (e.g., Beverages)"
+                        value={newCategoryName}
+                        onChange={(e) => setNewCategoryName(e.target.value)}
+                        className="flex-1 min-h-[44px]"
+                      />
+                      <Input
+                        placeholder="🥤"
+                        value={newCategoryIcon}
+                        onChange={(e) => setNewCategoryIcon(e.target.value)}
+                        className="w-full sm:w-20 min-h-[44px] text-center"
+                        maxLength={2}
+                      />
+                    </div>
+                    <Button 
+                      onClick={handleAddCategory} 
+                      className="bg-emerald-600 hover:bg-emerald-700 w-full sm:w-auto min-h-[44px]"
+                    >
                       <Plus className="h-4 w-4 mr-2" />
-                      Create
+                      Create Category
                     </Button>
                   </div>
                 </CardHeader>
