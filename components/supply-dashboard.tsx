@@ -2196,6 +2196,7 @@ export function SupplyDashboard() {
     )
   }
 
+  // Main dashboard return
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50">
       <header className="bg-white border-b shadow-sm">
@@ -2272,12 +2273,6 @@ export function SupplyDashboard() {
               )}
             </CardHeader>
           </Card>
-                {/* Household members view removed to simplify the UI */}
-                {/* Invite partner zone removed as requested */}
-              </div>
-            )}
-          </CardHeader>
-        </Card>
 
           <Card className="border-purple-200 bg-purple-50">
             <CardHeader>
