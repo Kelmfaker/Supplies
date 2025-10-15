@@ -110,7 +110,7 @@ export function LoginForm() {
     <Card className="w-full max-w-md mx-4">
       <CardHeader className="text-center">
         <CardTitle className="text-2xl font-bold text-emerald-700">Household Supplies Manager</CardTitle>
-        <CardDescription>{hasAccount ? 'Login with your email' : 'Select your role to continue'}</CardDescription>
+        <CardDescription>{hasAccount ? 'Login with your code' : 'Select your role to continue'}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <RadioGroup value={role} onValueChange={(value) => setRole(value as "wife" | "husband")}>
