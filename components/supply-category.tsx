@@ -87,48 +87,97 @@ export function SupplyCategory({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <Button size="sm" variant="ghost" className="h-8 w-8 p-0 mr-1" onClick={(e) => { e.stopPropagation(); const next = !isOpen; setIsOpen(next); onUserToggle?.(next); }} aria-label={isOpen ? 'Collapse category' : 'Expand category'}>
+    <Card className="h-fit shadow-sm hover:shadow-md transition-all duration-200 border-l-4 border-l-emerald-300">
+      <CardHeader className="pb-3 sm:pb-4">
+        <CardTitle className="flex items-center gap-2 sm:gap-3 text-base sm:text-lg">
+          {/* Expand/Collapse Button */}
+          <Button 
+            size="sm" 
+            variant="ghost" 
+            className="h-7 w-7 sm:h-8 sm:w-8 p-0 flex-shrink-0 hover:bg-emerald-50" 
+            onClick={(e) => { 
+              e.stopPropagation(); 
+              const next = !isOpen; 
+              setIsOpen(next); 
+              onUserToggle?.(next); 
+            }} 
+            aria-label={isOpen ? 'Collapse category' : 'Expand category'}
+          >
             {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </Button>
-          <span className="text-2xl">{category.icon}</span>
-          {category.name}
-          <Badge variant="secondary" className="ml-auto">
+          
+          {/* Category Icon and Name */}
+          <span className="text-xl sm:text-2xl flex-shrink-0">{category.icon}</span>
+          <span className="font-semibold text-gray-900 truncate min-w-0 flex-1">{category.name}</span>
+          
+          {/* Supply Count Badge */}
+          <Badge 
+            variant="secondary" 
+            className="ml-auto flex-shrink-0 text-xs px-2 py-1 bg-emerald-100 text-emerald-700 border-emerald-200"
+          >
             {supplies.length}
           </Badge>
-          {isWife && onDeleteCategory && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={(e) => {
-                e.stopPropagation()
-                onDeleteCategory(category.id)
-              }}
-              className="h-8 w-8 p-0 ml-1 text-red-500 hover:text-red-700 hover:bg-red-50"
-              title="Delete category"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          )}
-          {isWife && onUpdateCategory && (
-            <div className="ml-2 flex items-center gap-1">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setIsEditing(true)
-                }}
-                className="h-8 w-8 p-0"
-                title="Edit category"
-              >
-                ✏️
-              </Button>
+          
+          {/* Action Buttons - Only for wife role */}
+          {isWife && (
+            <div className="flex items-center gap-1 ml-2">
+              {onUpdateCategory && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setIsEditing(true)
+                  }}
+                  className="h-7 w-7 sm:h-8 sm:w-8 p-0 hover:bg-blue-50 text-blue-600"
+                  title="Edit category"
+                >
+                  ✏️
+                </Button>
+              )}
+              {onDeleteCategory && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (confirm(`Delete category "${category.name}"? This will also delete all items in this category.`)) {
+                      onDeleteCategory(category.id)
+                    }
+                  }}
+                  className="h-7 w-7 sm:h-8 sm:w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                  title="Delete category"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
             </div>
           )}
         </CardTitle>
+        
+        {/* Quick Status Summary */}
+        {supplies.length > 0 && (
+          <div className="flex items-center gap-2 mt-2 text-xs">
+            {supplies.filter(s => s.status === 'available').length > 0 && (
+              <span className="flex items-center gap-1 text-green-600">
+                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                {supplies.filter(s => s.status === 'available').length} OK
+              </span>
+            )}
+            {supplies.filter(s => s.status === 'low').length > 0 && (
+              <span className="flex items-center gap-1 text-orange-600">
+                <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                {supplies.filter(s => s.status === 'low').length} Low
+              </span>
+            )}
+            {supplies.filter(s => s.status === 'out').length > 0 && (
+              <span className="flex items-center gap-1 text-red-600">
+                <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                {supplies.filter(s => s.status === 'out').length} Out
+              </span>
+            )}
+          </div>
+        )}
       </CardHeader>
       {isOpen && (
         <CardContent className="space-y-2">
