@@ -1010,125 +1010,113 @@ export function SupplyDashboard() {
       }
 
       const padding = 48
-      const lineHeight = 36
-      const categoryHeight = 50
-      const headerHeight = 120
+      const lineHeight = 60 // Taller rows for better mobile visibility
+      const categoryHeight = 60 // Taller category headers
+      const headerHeight = 140
       let totalHeight = headerHeight + padding * 2
 
       Object.values(itemsByCategory).forEach((items) => {
         totalHeight += categoryHeight + items.length * lineHeight + 30
       })
 
-      // Make canvas larger for better quality
+      // Make canvas larger for better quality - matching your design
       canvas.width = 900
       canvas.height = totalHeight
 
-      // Set up improved fonts with better sizing
+      // Set up fonts matching your design
       const fonts = {
-        title: "bold 36px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif",
-        subtitle: "16px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif", 
-        category: "bold 26px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif",
-        item: "18px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif",
+        title: "bold 40px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif",
+        subtitle: "18px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif", 
+        category: "bold 24px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif",
+        item: "20px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif",
         status: "bold 14px system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif"
       }
 
-      // Create gradient background
-      const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height)
-      gradient.addColorStop(0, "#f0fdf4")
-      gradient.addColorStop(1, "#ecfdf5")
-      ctx.fillStyle = gradient
+      // Clean light background like your design
+      ctx.fillStyle = "#f8f9fa"
       ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-      // Add subtle border
-      ctx.strokeStyle = "#d1fae5"
-      ctx.lineWidth = 3
-      ctx.strokeRect(0, 0, canvas.width, canvas.height)
-
-      // Header section with better styling
-      ctx.fillStyle = "#059669"
+      // Header section - clean white card like your design
+      ctx.fillStyle = "#ffffff"
+      ctx.fillRect(0, 0, canvas.width, headerHeight)
+      
+      // Shopping cart icon and title
+      ctx.fillStyle = "#2d3748"
       ctx.font = fonts.title
       const titleText = "🛒 Shopping List"
       const titleWidth = ctx.measureText(titleText).width
-      ctx.fillText(titleText, (canvas.width - titleWidth) / 2, padding + 40)
+      ctx.fillText(titleText, (canvas.width - titleWidth) / 2, 70)
 
-      // Add household info
-      ctx.fillStyle = "#6b7280"
+      // Subtitle with date and count - matching your design
+      ctx.fillStyle = "#718096"
       ctx.font = fonts.subtitle
       const dateText = `Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}`
       const dateWidth = ctx.measureText(dateText).width
-      ctx.fillText(dateText, (canvas.width - dateWidth) / 2, padding + 70)
+      ctx.fillText(dateText, (canvas.width - dateWidth) / 2, 100)
       
-      const itemCountText = `${neededItems.length} item${neededItems.length !== 1 ? 's' : ''} to buy`
+      const itemCountText = `${neededItems.length} items to buy`
       const countWidth = ctx.measureText(itemCountText).width
-      ctx.fillText(itemCountText, (canvas.width - countWidth) / 2, padding + 95)
+      ctx.fillText(itemCountText, (canvas.width - countWidth) / 2, 125)
 
-      let yPosition = headerHeight + padding
+      let yPosition = headerHeight + 20
 
       Object.entries(itemsByCategory).forEach(([categoryId, items]) => {
         const category = categories.find((c) => c.id === categoryId)
 
-        // Category header with improved styling
-        ctx.fillStyle = "#10b981"
-        ctx.fillRect(padding, yPosition, canvas.width - padding * 2, categoryHeight)
+        // Category header - exact green color from your design
+        ctx.fillStyle = "#38a169" // Green color matching your design
+        ctx.fillRect(20, yPosition, canvas.width - 40, categoryHeight)
         
-        // Add rounded corners effect with border
-        ctx.strokeStyle = "#059669"
-        ctx.lineWidth = 2
-        ctx.strokeRect(padding, yPosition, canvas.width - padding * 2, categoryHeight)
-
+        // White text on green background - category title
         ctx.fillStyle = "#ffffff"
         ctx.font = fonts.category
-        const categoryText = `${category?.icon || "📦"} ${category?.name || "Unknown"}`
-        const categoryTextWidth = ctx.measureText(categoryText).width
-        ctx.fillText(categoryText, padding + 20, yPosition + 32)
+        const categoryText = `${category?.icon || "📦"} ${category?.name || "Unknown Category"}`
+        ctx.fillText(categoryText, 40, yPosition + 38)
         
-        // Add item count for category
-        ctx.fillStyle = "#d1fae5"
+        // Item count on the right in white
         ctx.font = fonts.status
         const countText = `${items.length} item${items.length !== 1 ? 's' : ''}`
         const countTextWidth = ctx.measureText(countText).width
-        ctx.fillText(countText, canvas.width - padding - countTextWidth - 20, yPosition + 32)
+        ctx.fillText(countText, canvas.width - countTextWidth - 40, yPosition + 38)
         
-        yPosition += categoryHeight + 10
+        yPosition += categoryHeight
 
         items.forEach((item, index) => {
-          // Alternating row colors for better readability
-          ctx.fillStyle = index % 2 === 0 ? "#ffffff" : "#f8fafc"
-          ctx.fillRect(padding + 10, yPosition, canvas.width - padding * 2 - 20, lineHeight)
+          // White background for items (clean design)
+          ctx.fillStyle = "#ffffff"
+          ctx.fillRect(20, yPosition, canvas.width - 40, lineHeight)
 
-          // Left border indicator
-          ctx.fillStyle = item.status === "low" ? "#f59e0b" : "#ef4444"
-          ctx.fillRect(padding + 10, yPosition, 6, lineHeight)
+          // Orange/red left border indicator like your design
+          ctx.fillStyle = "#e53e3e" // Red border like your design
+          ctx.fillRect(20, yPosition, 6, lineHeight)
 
-          // Item name with better positioning
-          ctx.fillStyle = "#1f2937"
+          // Item name - matching your typography
+          ctx.fillStyle = "#2d3748"
           ctx.font = fonts.item
-          ctx.fillText(item.name, padding + 30, yPosition + 24)
+          ctx.fillText(`${item.name}`, 50, yPosition + 38)
 
-          // Status badge with improved design
+          // Status badge on the right - matching your design
           const statusText = item.status === "low" ? "Low Stock" : "Out of Stock"
-          const statusWidth = 120
-          const statusX = canvas.width - padding - statusWidth - 20
+          const badgeColor = item.status === "low" ? "#f6ad55" : "#e53e3e"
           
-          // Status background
-          ctx.fillStyle = item.status === "low" ? "#fef3c7" : "#fee2e2"
-          ctx.fillRect(statusX, yPosition + 6, statusWidth, 24)
-          
-          // Status border
-          ctx.strokeStyle = item.status === "low" ? "#f59e0b" : "#ef4444"
-          ctx.lineWidth = 1
-          ctx.strokeRect(statusX, yPosition + 6, statusWidth, 24)
-          
-          // Status text
-          ctx.fillStyle = item.status === "low" ? "#92400e" : "#991b1b"
+          // Calculate badge dimensions
           ctx.font = fonts.status
-          const statusTextWidth = ctx.measureText(statusText).width
-          ctx.fillText(statusText, statusX + (statusWidth - statusTextWidth) / 2, yPosition + 21)
+          const statusWidth = ctx.measureText(statusText).width + 20
+          const badgeX = canvas.width - statusWidth - 40
+          const badgeY = yPosition + 15
+          
+          // Draw badge background
+          ctx.fillStyle = badgeColor
+          ctx.fillRect(badgeX, badgeY, statusWidth, 30)
+          
+          // Badge text in white
+          ctx.fillStyle = "#ffffff"
+          ctx.fillText(statusText, badgeX + 10, badgeY + 20)
 
           yPosition += lineHeight
         })
 
-        yPosition += 20
+        yPosition += 20 // Space between categories
       })
 
     // Try to export the canvas as an image
